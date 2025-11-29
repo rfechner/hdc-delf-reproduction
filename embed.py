@@ -125,8 +125,6 @@ def compute_train_stats(features, eps=1e-8):
     mean = features.mean(axis=(0, 1), keepdims=True)
     std  = features.std(axis=(0, 1), keepdims=True) + eps
 
-    # After standardizing using mean/std, compute global L2 norm
-    feat_std = (features - mean) / std
     return mean, std
 
 

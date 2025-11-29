@@ -1,7 +1,7 @@
 import pickle
 import numpy as np
 from embed_exp05 import feature_indices
-
+from scipy.integrate import trapezoid as trapz
 def evaluate(db, query, gts):
     """
         Computes accuracy for database and query using *normalized* dot products.
@@ -21,6 +21,85 @@ def evaluate(db, query, gts):
     acc = truepos / query.shape[0]
 
     return acc
+
+def evaluate_new(db, query, gtsoft, gthard):
+    """
+        Instead of taking single best match, we're computing
+        `Average Precision` over a range of thresholds \theta \in [0, 1].
+
+        Matches in GTHard have to be found -> towards recall
+        Entries other than GTSoft shouldn't be made -> precision
+
+        Recall: TP / (TP + FN)
+        Precision : TP / (TP + FP) 
+
+        For each t in [0, 1] calculate all matches in the similarity matrix m for gtsoft and gthard.
+        For recall, we calculate fn from the difference of the similarity matrix and gthard
+        For precision, we calculate fp from the difference of similarity matrix and gtsoft.
+    """
+    # Normalize db and query along the feature dimension
+    db_norm = db / np.linalg.norm(db, axis=1, keepdims=True)
+    query_norm = query / np.linalg.norm(query, axis=1, keepdims=True)
+
+    # Normalized dot product = cosine similarity
+    similarity = db_norm @ query_norm.T  # [N, M]
+    similarity = (similarity + 1) / 2 # map to range [0, 1]
+    recalls, precisions = [0], [1]
+    startV, endV = similarity.min(), similarity.max()
+
+    # remove soft, but not hard entries
+    similarity[~gthard & gtsoft] = startV
+
+    for t in np.linspace(endV, startV, 100): # reverse iteration -> Low recall first, then high precision.
+        matches = similarity >= t
+
+        fn = (~matches & gthard).sum()
+        tp = (matches & gthard).sum()
+        recall = tp / (fn + tp) if (fn + tp) > 0 else 1
+
+        tp = (matches & gtsoft).sum()
+        fp = (~gtsoft & matches).sum()
+        precision = tp / (fp + tp) if (fp + tp) > 0 else 1
+        recalls.append(recall); precisions.append(precision)
+    recalls.append(1); precisions.append(0);
+
+    average_precision = trapz(x=recalls, y=precisions)
+    return average_precision
+
+
+def evaluate_new_hard(db, query, gtsoft, gthard):
+    """
+        Exact copy of peers code
+    """
+    # Normalize db and query along the feature dimension
+    db_norm = db / np.linalg.norm(db, axis=1, keepdims=True)
+    query_norm = query / np.linalg.norm(query, axis=1, keepdims=True)
+
+    # Normalized dot product = cosine similarity
+    similarity = db_norm @ query_norm.T  # [N, M]
+    similarity = (similarity + 1) / 2 # map to range [0, 1]
+    recalls, precisions = [0], [1]
+    startV, endV = similarity.min(), similarity.max()
+
+    gt = gthard.astype(bool)
+    
+    # remove soft, but not hard entries
+    similarity[~gthard & gtsoft] = startV
+
+    for t in np.linspace(endV, startV, 100): # reverse iteration -> Low recall first, then high precision.
+        matches = similarity >= t
+
+        tp = (matches & gt).astype(int).sum()
+        fn = (~matches & gt).astype(int).sum()
+        fp = (matches & ~gt).astype(int).sum()
+
+        recall = tp / (fn + tp) if (fn + tp) > 0 else 1
+        precision = tp / (fp + tp) if (fp + tp) > 0 else 1
+        recalls.append(recall); precisions.append(precision);
+    
+    recalls.append(1); precisions.append(0);
+    average_precision = trapz(x=recalls, y=precisions)
+    return average_precision
 
 # LLM generated vectorized, batched version of the evaluation function with feature un-binding.
 def evaluate_with_unbind(db, query, gts, topm=10, feature_indices=feature_indices, topf=200, batch_size=64, eps=1e-12):
