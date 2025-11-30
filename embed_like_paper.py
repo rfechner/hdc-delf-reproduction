@@ -1,3 +1,4 @@
+from tqdm import tqdm
 import numpy as np
 import pickle
 
@@ -6,11 +7,20 @@ w, h = 960, 1280
 xb, yb = np.linspace(0, w, nx), np.linspace(0, h, ny)
 binsizex, binsizey = xb[1], yb[1]
 d = 1024 * 4
-#bxs, bys = np.random.uniform(*[-1, 1], size=(nx + 1, d)), np.random.uniform(*[-1, 1], size=(ny + 1, d))
 bxs, bys = np.random.choice([-1, 1], size=(nx + 1, d)), np.random.choice([-1, 1], size=(ny + 1, d))
+
 def positional_encoding_vec(points, xb=xb, yb=yb, bxs=bxs, bys=bys,
                             binsizex=binsizex, binsizey=binsizey, d=d, nx=nx, ny=ny):
+    """
+        Positional Encoding Scheme. See paper https://openaccess.thecvf.com/content/CVPR2021/papers/Neubert_Hyperdimensional_Computing_as_a_Framework_for_Systematic_Aggregation_of_Image_CVPR_2021_paper.pdf
+        Section 3.1.5. for details.
 
+        Args:
+            points: [nsamples, 2]
+
+        Returns:
+            positional encodings: [nsamples, d] Positional encodings of position in VSA-Vectorspace.
+    """
     y, x = points[..., 0], points[..., 1]
 
     xi = np.clip(np.digitize(x, xb) - 1, 0, nx - 1)
@@ -63,16 +73,21 @@ def feature_batched_iterator(features, proj, batchsize=128):
         fs = fs @ proj
         yield fs
         
-def bind_bundle_batched(kps, fs, proj):
+def bind_bundle_batched(kps, fs, proj, batchsize=128):
     """
-    Produces a (nsamples, d) vector per sample.
-    Both pos_enc and projected fs are normalized row-wise after binding.
+        Args:
+            kps: [nsamples, 2], l2-normalized, standartized
+            fs: [nsamples, nfeatures, din] Features, l2-normalized, standartized
+            proj: [din, dout] Column-normalized projection matrix
+        
+        Returns:
+            outs: [nsamples, dout] Features are bound to keypoints and bundled across feature dimension.
     """
-    posit = iter(positional_encoding_vec_batched(kps))
-    fsit  = iter(feature_batched_iterator(fs, proj))
+    posit = iter(positional_encoding_vec_batched(kps, batchsize=batchsize))
+    fsit  = iter(feature_batched_iterator(fs, proj, batchsize=batchsize))
 
     outs = []
-    for pos, f in zip(posit, fsit):
+    for pos, f in tqdm(zip(posit, fsit), desc='Bundling: ', total=int(np.ceil(fs.shape[0] / batchsize))):
         tmp = pos * f            # bind
         tmp = tmp.sum(axis=1)    # bundle
         tmp = np.clip(tmp, -1, 1)
@@ -81,9 +96,18 @@ def bind_bundle_batched(kps, fs, proj):
     return np.concatenate(outs, axis=0)
 
 def l2norm(features):
+    """
+        Returns
+            features: [nsamples, nfeatures, din], last axis l2-normalized, magnitude is one.
+    """
     return features / np.linalg.norm(features, ord=2, axis=-1, keepdims=True)
 
 def compute_train_stats(features):
+    """
+        Returns:
+            mean: [1, 1, din]
+            std: [1, 1, din]
+    """
     mean = np.mean(features, axis=(0, 1), keepdims=True)
     std = np.std(features, axis=(0, 1), keepdims=True)
     return mean, std
@@ -102,8 +126,6 @@ def compute_train_stats_imagewise(features):
 def normalize(features, mean, std):
     return  (features - mean) / (std + 1e-12)
 
-# ------------------------------ main -----------------------------------
-
 def main():
     import gc
 
@@ -113,27 +135,24 @@ def main():
     ]
 
     for pickle_name in pickle_names:
-
+        print(f"Working on: {pickle_name}")
         with open(pickle_name, 'rb') as file:
             tmp = pickle.load(file)
             kps_db, _, features_db = tmp['db']
 
         proj = np.random.normal(size=(features_db.shape[-1], d))
-        # column-normalize random matrix. In github we row-normalize and mmul with transpose -> equivalent
+
+        # column-normalize random matrix. In VSA-Toolbox we row-normalize and mmul with transpose -> equivalent
         proj = proj / np.linalg.norm(proj, axis=0, keepdims=True) 
-
-        print('Computing database mean')
-
         # Paper: "We use l2-normalization to standartize descriptor magnitudes"
         features_db = l2norm(features_db)
 
-        # followed by dimension-wise standardization to standard normal distributions.
-        # The standardization is done using all descriptors from the current image.
+        # Paper: "followed by dimension-wise standardization to standard normal distributions.
+        # The standardization is done using all descriptors from the current image."
         db_mean, db_std = compute_train_stats_imagewise(features_db)
         features_db = normalize(features_db, db_mean, db_std)
-        
-        print('Binding and Bundling training set')
 
+        print("Binding and bundling database vectors...")
         # bind and bundle
         db = bind_bundle_batched(kps_db, features_db, proj=proj)
         
@@ -152,10 +171,11 @@ def main():
         # Discussion: This is how it is done in the VSA-toolbox. Train and Test are normalized seperately.
         q_mean, q_std = compute_train_stats_imagewise(features_q)
         features_q = normalize(features_q, q_mean, q_std)
+
+        print("Binding and bundling query vectors...")
         query = bind_bundle_batched(kps_q, features_q, proj=proj)
 
-        # TODO: Paper: "We mean-center all holistic descriptors with the database mean"
-        # -> I've tried this, however this drops performance quite drastically.
+        # Paper: "We mean-center all holistic descriptors with the database mean"
         holistic_db_mean, holistic_db_std = compute_train_stats(db)
         db = normalize(db, holistic_db_mean, holistic_db_std)
         query = normalize(query, holistic_db_mean, holistic_db_std)
