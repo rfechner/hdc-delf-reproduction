@@ -1,5 +1,6 @@
-from embed_like_paper import main as prepare_data
-from evaluate import evaluate_new
+from embed import main as prepare_data
+from evaluate import evaluate as compute_average_prec
+
 import pickle
 import numpy as np
 import json
@@ -8,6 +9,7 @@ from datetime import datetime
 seeds = np.arange(10)
 pickle_files = ["exp2-preprocessed-DB_2014-12__Q_2015-05.pickle",
                 'exp2-preprocessed-DB_2014-12__Q_2015-08.pickle']
+
 results = {key : [] for key in pickle_files}
 for seed in seeds:
     np.random.seed(seed)
@@ -18,7 +20,7 @@ for seed in seeds:
             tmp = pickle.load(io)
             db, query, gts = tmp.values()
         gt_hard, gt_soft = gts['hard'].T, gts['soft'].T
-        avg_prec = evaluate_new(db, query, gthard=gt_hard, gtsoft=gt_soft).item()
+        avg_prec = compute_average_prec(db, query, gthard=gt_hard, gtsoft=gt_soft).item()
         print(f'Seed: {seed}, File: {pickle_file}, Avg Prec: {avg_prec:.2f}')
         results[pickle_file].append(avg_prec)
 
