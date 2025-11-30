@@ -1,6 +1,7 @@
 import numpy as np
 import pickle
 
+np.random.seed(0)
 nx, ny = 4, 6
 w, h = 960, 1280
 xb, yb = np.linspace(0, w, nx), np.linspace(0, h, ny)
@@ -8,6 +9,7 @@ binsizex, binsizey = xb[1], yb[1]
 d = 1024 * 4
 #bxs, bys = np.random.uniform(*[-1, 1], size=(nx + 1, d)), np.random.uniform(*[-1, 1], size=(ny + 1, d))
 bxs, bys = np.random.choice([-1, 1], size=(nx + 1, d)), np.random.choice([-1, 1], size=(ny + 1, d))
+
 def positional_encoding_vec(points, xb=xb, yb=yb, bxs=bxs, bys=bys,
                             binsizex=binsizex, binsizey=binsizey, d=d, nx=nx, ny=ny):
 
@@ -58,11 +60,16 @@ def positional_encoding_vec_batched(points, batchsize=128):
         yield positional_encoding_vec(points[i:i+batchsize])
 
 def feature_batched_iterator(features, proj, batchsize=128):
+    sqrt_n = np.sqrt(features.shape[-1])
     for i in range(0, len(features), batchsize):
+        
         fs = features[i:i+batchsize]
-        fs = fs @ proj
+        fs = np.matmul(fs, proj)
+        fs *= np.linalg.norm(fs, ord=2, axis=-1, keepdims=True) / sqrt_n
+        fs = np.clip(fs, -1, 1)
         yield fs
         
+
 def bind_bundle_batched(kps, fs, proj):
     """
     Produces a (nsamples, d) vector per sample.
@@ -83,20 +90,9 @@ def bind_bundle_batched(kps, fs, proj):
 def l2norm(features):
     return features / np.linalg.norm(features, ord=2, axis=-1, keepdims=True)
 
-def compute_train_stats(features):
-    mean = np.mean(features, axis=(0, 1), keepdims=True)
-    std = np.std(features, axis=(0, 1), keepdims=True)
-    return mean, std
-
-def compute_train_stats_imagewise(features):
-    """
-        Returns:
-            mean: [nsamples, 1, din]
-            std: [nsamples, 1, din]
-    """
-    mean = np.mean(features, axis=(1,), keepdims=True)
-    std = np.std(features, axis=(1,), keepdims=True)
-
+def stats(features, axis):
+    mean = np.mean(features, axis=axis, keepdims=True)
+    std = np.std(features, axis=axis, keepdims=True)
     return mean, std
 
 def standardize(features, mean, std):
@@ -118,9 +114,9 @@ def main():
             tmp = pickle.load(file)
             kps_db, _, features_db = tmp['db']
 
-        proj = np.random.normal(size=(features_db.shape[-1], d))
-        # column-normalize random matrix. In github we row-normalize and mmul with transpose -> equivalent
-        proj = proj / np.linalg.norm(proj, axis=0, keepdims=True) 
+        proj = np.random.normal(size=(d, features_db.shape[-1])) # [d, din]
+        proj = proj / np.linalg.norm(proj, axis=1, keepdims=True) # row-normalized
+        proj = proj.T # [din, d]
 
         print('Computing database mean')
 
@@ -129,7 +125,7 @@ def main():
 
         # followed by dimension-wise standardization to standard normal distributions.
         # The standardization is done using all descriptors from the current image.
-        db_mean, db_std = compute_train_stats_imagewise(features_db)
+        db_mean, db_std = stats(features_db, axis=(1,))
         features_db = standardize(features_db, db_mean, db_std)
         
         print('Binding and Bundling training set')
@@ -150,13 +146,12 @@ def main():
         features_q = l2norm(features_q)
 
         # Discussion: This is how it is done in the VSA-toolbox. Train and Test are normalized seperately.
-        q_mean, q_std = compute_train_stats_imagewise(features_q)
+        q_mean, q_std = stats(features_q, axis=(1,))
         features_q = standardize(features_q, q_mean, q_std)
         query = bind_bundle_batched(kps_q, features_q, proj=proj)
 
-        # TODO: Paper: "We mean-center all holistic descriptors with the database mean"
-        # -> I've tried this, however this drops performance quite drastically.
-        holistic_db_mean, holistic_db_std = compute_train_stats(db)
+        # Paper: "We mean-center all holistic descriptors with the database mean"
+        holistic_db_mean, holistic_db_std = stats(db, axis=(0,))
         db = standardize(db, holistic_db_mean, holistic_db_std)
         query = standardize(query, holistic_db_mean, holistic_db_std)
 

@@ -2,7 +2,8 @@ import pickle
 import numpy as np
 from embed_exp05 import feature_indices
 from scipy.integrate import trapezoid as trapz
-def evaluate(db, query, gts):
+
+def evaluate_old(db, query, gts):
     """
         Computes accuracy for database and query using *normalized* dot products.
         db : [N, d]
@@ -63,41 +64,6 @@ def evaluate_new(db, query, gtsoft, gthard):
         recalls.append(recall); precisions.append(precision)
     recalls.append(1); precisions.append(0);
 
-    average_precision = trapz(x=recalls, y=precisions)
-    return average_precision
-
-
-def evaluate_new_hard(db, query, gtsoft, gthard):
-    """
-        Exact copy of peers code
-    """
-    # Normalize db and query along the feature dimension
-    db_norm = db / np.linalg.norm(db, axis=1, keepdims=True)
-    query_norm = query / np.linalg.norm(query, axis=1, keepdims=True)
-
-    # Normalized dot product = cosine similarity
-    similarity = db_norm @ query_norm.T  # [N, M]
-    similarity = (similarity + 1) / 2 # map to range [0, 1]
-    recalls, precisions = [0], [1]
-    startV, endV = similarity.min(), similarity.max()
-
-    gt = gthard.astype(bool)
-    
-    # remove soft, but not hard entries
-    similarity[~gthard & gtsoft] = startV
-
-    for t in np.linspace(endV, startV, 100): # reverse iteration -> Low recall first, then high precision.
-        matches = similarity >= t
-
-        tp = (matches & gt).astype(int).sum()
-        fn = (~matches & gt).astype(int).sum()
-        fp = (matches & ~gt).astype(int).sum()
-
-        recall = tp / (fn + tp) if (fn + tp) > 0 else 1
-        precision = tp / (fp + tp) if (fp + tp) > 0 else 1
-        recalls.append(recall); precisions.append(precision);
-    
-    recalls.append(1); precisions.append(0);
     average_precision = trapz(x=recalls, y=precisions)
     return average_precision
 
@@ -170,21 +136,3 @@ def evaluate_with_unbind(db, query, gts, topm=10, feature_indices=feature_indice
     truepos = gts[winners, np.arange(M)].sum()
     acc = truepos / float(M)
     return acc
-
-
-
-if __name__=='__main__':
-    exp_name = input("Expname: ")
-    
-    with open(f'{exp_name}-preprocessed-DB_2014-12__Q_2015-05.pickle', 'rb') as file:
-        tmp = pickle.load(file)
-        db, query, gts = tmp.values()
-    gt_hard, gt_soft = gts['hard'].T, gts['soft'].T
-    print(evaluate(db, query, gt_hard), evaluate(db, query, gt_soft))
-
-    with open(f'{exp_name}-preprocessed-DB_2014-12__Q_2015-08.pickle', 'rb') as file:
-        tmp = pickle.load(file)
-        db, query, gts = tmp.values()
-
-    gt_hard, gt_soft = gts['hard'].T, gts['soft'].T
-    print(evaluate(db, query, gt_hard), evaluate(db, query, gt_soft))
