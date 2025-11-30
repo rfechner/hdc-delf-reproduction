@@ -4,11 +4,11 @@ An attempt to reproduce the results table in [Hyperdimensional computing as a fr
 
 I've collected results for the OxfordRobotCar dataset and evaluated where ground truth is available. Main experiment run script is `run_exp.py`.
 
-I've noticed large variance in the results when changing random seeds, which is why I'm reporting the mean and median average precision (as the approximate integral of the Recall-Precision Curve) rounded to nearest cent.
+I've noticed large variance in the results when changing random seeds, which is why I'm reporting the mean and median average precision over 10 seeds (as the approximate integral of the Recall-Precision Curve) rounded to nearest cent.
 
-|Database|Query|Mean|Median|Min|Max|
-|------|------|------|------|---|---|
-|2014-12-09|2015-05-19|0.90|0.91|0.86|0.92|
-|2014-12-09|2015-08-28|0.74|0.75|0.69|0.81|
+|Database|Query|Mean|Median|Min|Max|Reported in paper|
+|------|------|------|------|---|---|------|
+|2014-12-09|2015-05-19|0.90|0.91|0.86|0.92|0.91|
+|2014-12-09|2015-08-28|0.74|0.75|0.69|0.81|0.71|
 
 
