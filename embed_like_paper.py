@@ -99,7 +99,7 @@ def compute_train_stats_imagewise(features):
 
     return mean, std
 
-def normalize(features, mean, std):
+def standardize(features, mean, std):
     return  (features - mean) / (std + 1e-12)
 
 # ------------------------------ main -----------------------------------
@@ -124,13 +124,13 @@ def main():
 
         print('Computing database mean')
 
-        # Paper: "We use l2-normalization to standartize descriptor magnitudes"
+        # Paper: "We use l2-normalization to standardize descriptor magnitudes"
         features_db = l2norm(features_db)
 
         # followed by dimension-wise standardization to standard normal distributions.
         # The standardization is done using all descriptors from the current image.
         db_mean, db_std = compute_train_stats_imagewise(features_db)
-        features_db = normalize(features_db, db_mean, db_std)
+        features_db = standardize(features_db, db_mean, db_std)
         
         print('Binding and Bundling training set')
 
@@ -151,14 +151,14 @@ def main():
 
         # Discussion: This is how it is done in the VSA-toolbox. Train and Test are normalized seperately.
         q_mean, q_std = compute_train_stats_imagewise(features_q)
-        features_q = normalize(features_q, q_mean, q_std)
+        features_q = standardize(features_q, q_mean, q_std)
         query = bind_bundle_batched(kps_q, features_q, proj=proj)
 
         # TODO: Paper: "We mean-center all holistic descriptors with the database mean"
         # -> I've tried this, however this drops performance quite drastically.
         holistic_db_mean, holistic_db_std = compute_train_stats(db)
-        db = normalize(db, holistic_db_mean, holistic_db_std)
-        query = normalize(query, holistic_db_mean, holistic_db_std)
+        db = standardize(db, holistic_db_mean, holistic_db_std)
+        query = standardize(query, holistic_db_mean, holistic_db_std)
 
         del tmp, kps_q, features_q
         gc.collect()
