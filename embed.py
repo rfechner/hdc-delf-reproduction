@@ -1,12 +1,13 @@
 import numpy as np
 import pickle
 
+np.random.seed(0)
 nx, ny = 4, 6
 w, h = 960, 1280
 xb, yb = np.linspace(0, w, nx), np.linspace(0, h, ny)
 binsizex, binsizey = xb[1], yb[1]
 d = 1024 * 4
-bxs, bys = np.random.uniform(*[-1, 1], size=(nx + 1, d)), np.random.uniform(*[-1, 1], size=(ny + 1, d))
+bxs, bys = np.random.choice([-1, 1], size=(nx + 1, d)), np.random.choice([-1, 1], size=(ny + 1, d))
 
 def positional_encoding_vec(points, xb=xb, yb=yb, bxs=bxs, bys=bys,
                             binsizex=binsizex, binsizey=binsizey, d=d, nx=nx, ny=ny):
@@ -57,20 +58,24 @@ def positional_encoding_vec_batched(points, batchsize=128):
     for i in range(0, len(points), batchsize):
         yield positional_encoding_vec(points[i:i+batchsize])
 
-def feature_batched_iterator(features, proj, mean, std, batchsize=128):
+def feature_batched_iterator(features, proj, batchsize=128):
+    sqrt_n = np.sqrt(features.shape[-1])
     for i in range(0, len(features), batchsize):
+        
         fs = features[i:i+batchsize]
-        fs = fs @ proj
-        fs = (fs - mean) / (std + 1e-8)
+        fs = np.matmul(fs, proj)
+        fs *= np.linalg.norm(fs, ord=2, axis=-1, keepdims=True) / sqrt_n
+        fs = np.clip(fs, -1, 1)
         yield fs
         
-def bind_bundle_batched(kps, fs, proj, mean, std):
+
+def bind_bundle_batched(kps, fs, proj):
     """
     Produces a (nsamples, d) vector per sample.
     Both pos_enc and projected fs are normalized row-wise after binding.
     """
     posit = iter(positional_encoding_vec_batched(kps))
-    fsit  = iter(feature_batched_iterator(fs, proj, mean, std))
+    fsit  = iter(feature_batched_iterator(fs, proj))
 
     outs = []
     for pos, f in zip(posit, fsit):
@@ -81,53 +86,16 @@ def bind_bundle_batched(kps, fs, proj, mean, std):
 
     return np.concatenate(outs, axis=0)
 
-def compute_train_stats_streaming(features_iter, proj):
-    """
-    features_iter yields batches shaped [B, nfeatures, din]
-    proj: [din, d]
+def l2norm(features):
+    return features / np.linalg.norm(features, ord=2, axis=-1, keepdims=True)
 
-    Returns:
-        mean: shape [1, 1, d]
-        std:  shape [1, 1, d]
-    """
-    count = 0
-    mean = None
-    M2 = None
-
-    for fs in features_iter:
-        # project this batch
-        proj_fs = fs @ proj        # [B, nfeatures, d]
-        B, N, Dproj = proj_fs.shape
-        batch_count = B * N
-
-        batch_mean = proj_fs.mean(axis=(0, 1))
-        batch_var  = proj_fs.var(axis=(0, 1))
-
-        if mean is None:
-            mean = batch_mean
-            M2 = batch_var * batch_count
-            count = batch_count
-            continue
-
-        # Welford merge
-        delta = batch_mean - mean
-        total = count + batch_count
-
-        new_mean = mean + delta * (batch_count / total)
-        M2 = M2 + batch_var * batch_count + delta**2 * (count * batch_count / total)
-
-        mean = new_mean
-        count = total
-
-    std = np.sqrt(M2 / count)[None, None, :]
-    mean = mean[None, None, :]
+def stats(features, axis):
+    mean = np.mean(features, axis=axis, keepdims=True)
+    std = np.std(features, axis=axis, keepdims=True)
     return mean, std
 
-def features_iter(fs, batchsize=128):
-    for i in range(0, len(fs), batchsize):
-        yield fs[i: i+ batchsize]
-        
-# ------------------------------ main -----------------------------------
+def standardize(features, mean, std):
+    return  (features - mean) / (std + 1e-12)
 
 def main():
     import gc
@@ -139,36 +107,50 @@ def main():
 
     for pickle_name in pickle_names:
 
-        # --- DATABASE PASS ---
         with open(pickle_name, 'rb') as file:
             tmp = pickle.load(file)
             kps_db, _, features_db = tmp['db']
 
-        # Build MATLAB-like PN using features_db's dimension
-        input_dim = features_db.shape[-1]
+        proj = np.random.normal(size=(d, features_db.shape[-1])) # [d, din]
+        proj = proj / np.linalg.norm(proj, axis=1, keepdims=True) # row-normalized
+        proj = proj.T # [din, d]
 
-        proj = np.random.normal(size=(input_dim, d))
-        proj = proj / np.linalg.norm(proj, axis=0, keepdims=True) # row-normalize random matrix
+        print('Computing database mean')
 
-        print('Computing database mean by streaming...')
-        db_mean, db_std = compute_train_stats_streaming(features_iter(features_db), proj)
+        # Paper: "We use l2-normalization to standardize descriptor magnitudes"
+        features_db = l2norm(features_db)
 
+        # followed by dimension-wise standardization to standard normal distributions.
+        # The standardization is done using all descriptors from the current image.
+        db_mean, db_std = stats(features_db, axis=(1,))
+        features_db = standardize(features_db, db_mean, db_std)
+        
         print('Binding and Bundling training set')
+
         # bind and bundle
-        db = bind_bundle_batched(kps_db, features_db, proj=proj, mean=db_mean, std=db_std)
+        db = bind_bundle_batched(kps_db, features_db, proj=proj)
         
         del tmp, kps_db, features_db
         gc.collect()
 
-        # --- QUERY PASS ---
+        # Query
         with open(pickle_name, 'rb') as file:
             tmp = pickle.load(file)
             kps_q, _, features_q = tmp['query']
             gts = tmp['gt']
             
-        
         # bind and bundle
-        query = bind_bundle_batched(kps_q, features_q, proj=proj, mean=db_mean, std=db_std)
+        features_q = l2norm(features_q)
+
+        # Discussion: This is how it is done in the VSA-toolbox. Train and Test are normalized seperately.
+        q_mean, q_std = stats(features_q, axis=(1,))
+        features_q = standardize(features_q, q_mean, q_std)
+        query = bind_bundle_batched(kps_q, features_q, proj=proj)
+
+        # Paper: "We mean-center all holistic descriptors with the database mean"
+        holistic_db_mean, holistic_db_std = stats(db, axis=(0,))
+        db = standardize(db, holistic_db_mean, holistic_db_std)
+        query = standardize(query, holistic_db_mean, holistic_db_std)
 
         del tmp, kps_q, features_q
         gc.collect()
