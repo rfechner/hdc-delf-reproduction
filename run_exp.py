@@ -22,13 +22,13 @@ def evaluate(pickle_dir : str):
         ]
 
         for processed_pickle_file in processed_pickle_files:
-            with open(pickle_file, 'rb') as io:
+            with open(processed_pickle_file, 'rb') as io:
                 tmp = pickle.load(io)
                 db, query, gts = tmp.values()
             gt_hard, gt_soft = gts['hard'].T, gts['soft'].T
             avg_prec = compute_average_prec(db, query, gthard=gt_hard, gtsoft=gt_soft).item()
-            print(f'Seed: {seed}, File: {pickle_file}, Avg Prec: {avg_prec:.2f}')
-            results[pickle_file].append(avg_prec)
+            print(f'Seed: {seed}, File: {processed_pickle_file}, Avg Prec: {avg_prec:.2f}')
+            results[processed_pickle_file].append(avg_prec)
 
     date = datetime.now().isoformat()
     with open(os.path.join(pickle_dir, f'{date}-results.json'), 'w') as file:
