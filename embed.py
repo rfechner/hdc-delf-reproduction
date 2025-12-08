@@ -4,13 +4,18 @@ import gc
 import os
 from tqdm import tqdm
 
-np.random.seed(0)
 nx, ny = 4, 6
 w, h = 960, 1280
 xb, yb = np.linspace(0, w, nx), np.linspace(0, h, ny)
 binsizex, binsizey = xb[1], yb[1]
 d = 1024 * 4
-bxs, bys = np.random.choice([-1, 1], size=(nx + 1, d)), np.random.choice([-1, 1], size=(ny + 1, d))
+
+# Use a local Generator for positional encoding sign matrices so we don't
+# perturb the global RNG state used elsewhere (e.g. by the caller that
+# seeds np.random). These are intended to be fixed/deterministic.
+_local_rng = np.random.default_rng(0)
+bxs = _local_rng.choice([-1, 1], size=(nx + 1, d))
+bys = _local_rng.choice([-1, 1], size=(ny + 1, d))
 
 def positional_encoding_vec(points, xb=xb, yb=yb, bxs=bxs, bys=bys,
                             binsizex=binsizex, binsizey=binsizey, d=d, nx=nx, ny=ny):

@@ -10,7 +10,10 @@ import json
 SEEDS = np.arange(10)
 def evaluate(pickle_dir : str):
 
-    pickle_files = [os.path.join(pickle_dir, x) for x in os.listdir(pickle_dir) if "embedded" not in x]
+    # Use a stable, sorted order for the files so seeds map to files
+    # deterministically across runs (os.listdir order is not guaranteed).
+    pickle_filenames = sorted([x for x in os.listdir(pickle_dir) if "embedded" not in x and x.endswith('.pickle')])
+    pickle_files = [os.path.join(pickle_dir, x) for x in pickle_filenames]
     print("Evaluating pickle files:\n", '\n'.join(pickle_files))
 
     results = {key : [] for key in pickle_files}
