@@ -1,5 +1,8 @@
 import numpy as np
 import pickle
+import gc
+import os
+from tqdm import tqdm
 
 np.random.seed(0)
 nx, ny = 4, 6
@@ -97,36 +100,30 @@ def stats(features, axis):
 def standardize(features, mean, std):
     return  (features - mean) / (std + 1e-12)
 
-def main():
-    import gc
+def embedding(pickles : list[str]) -> None:
 
-    pickle_names = [
-        'DB_2014-12__Q_2015-08.pickle',
-        'DB_2014-12__Q_2015-05.pickle'
-    ]
+    assert all([x.endswith('.pickle') for x in pickles])
 
-    for pickle_name in pickle_names:
-
+    for pickle_name in tqdm(pickles, desc='Pickle Files'):
+        print(f"Embedding: {pickle_name}...")
+        
         with open(pickle_name, 'rb') as file:
             tmp = pickle.load(file)
             kps_db, _, features_db = tmp['db']
 
+        # Paper: "We use l2-normalization to standardize descriptor magnitudes"
+        features_db = l2norm(features_db)
+
+        # define projection matrix
         proj = np.random.normal(size=(d, features_db.shape[-1])) # [d, din]
         proj = proj / np.linalg.norm(proj, axis=1, keepdims=True) # row-normalized
         proj = proj.T # [din, d]
-
-        print('Computing database mean')
-
-        # Paper: "We use l2-normalization to standardize descriptor magnitudes"
-        features_db = l2norm(features_db)
 
         # followed by dimension-wise standardization to standard normal distributions.
         # The standardization is done using all descriptors from the current image.
         db_mean, db_std = stats(features_db, axis=(1,))
         features_db = standardize(features_db, db_mean, db_std)
         
-        print('Binding and Bundling training set')
-
         # bind and bundle
         db = bind_bundle_batched(kps_db, features_db, proj=proj)
         
@@ -155,13 +152,13 @@ def main():
         del tmp, kps_q, features_q
         gc.collect()
 
-        with open(f'exp2-preprocessed-{pickle_name}', 'wb') as file:
+        outdir, basename = os.path.split(pickle_name)
+        outfile = os.path.join(outdir, f'embedded-{basename}')
+
+        print(f"Writing to: {outfile}.")
+        with open(outfile, 'wb') as file:
             pickle.dump({
                 'db': db,
                 'query': query,
                 'gt': gts
             }, file=file)
-
-
-if __name__ == '__main__':
-    main()
