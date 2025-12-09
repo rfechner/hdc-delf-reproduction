@@ -3,6 +3,7 @@ import pickle
 import gc
 import os
 from tqdm import tqdm
+from typing import *
 
 nx, ny = 4, 6
 w, h = 960, 1280
@@ -72,6 +73,8 @@ def feature_batched_iterator(features, proj, batchsize=128):
         
         fs = features[i:i+batchsize]
         fs = np.matmul(fs, proj)
+
+        # re-normalize and clip to range [-1, 1] 
         fs *= np.linalg.norm(fs, ord=2, axis=-1, keepdims=True) / sqrt_n
         fs = np.clip(fs, -1, 1)
         yield fs
@@ -105,13 +108,17 @@ def stats(features, axis):
 def standardize(features, mean, std):
     return  (features - mean) / (std + 1e-12)
 
-def embedding(pickles : list[str]) -> None:
+def embedding(pickles : list[str], normalization : Literal['per-image', 'dataset'] = 'per-image', **kwargs) -> None:
 
     assert all([x.endswith('.pickle') for x in pickles])
+    stats_axis = {
+        'per-image' : (1,),
+        'dataset' : (0, 1)
+    }[normalization]
 
     for pickle_name in tqdm(pickles, desc='Pickle Files'):
         print(f"Embedding: {pickle_name}...")
-        
+
         with open(pickle_name, 'rb') as file:
             tmp = pickle.load(file)
             kps_db, _, features_db = tmp['db']
@@ -126,7 +133,7 @@ def embedding(pickles : list[str]) -> None:
 
         # followed by dimension-wise standardization to standard normal distributions.
         # The standardization is done using all descriptors from the current image.
-        db_mean, db_std = stats(features_db, axis=(1,))
+        db_mean, db_std = stats(features_db, axis=stats_axis)
         features_db = standardize(features_db, db_mean, db_std)
         
         # bind and bundle
@@ -145,7 +152,7 @@ def embedding(pickles : list[str]) -> None:
         features_q = l2norm(features_q)
 
         # Discussion: This is how it is done in the VSA-toolbox. Train and Test are normalized seperately.
-        q_mean, q_std = stats(features_q, axis=(1,))
+        q_mean, q_std = stats(features_q, axis=stats_axis)
         features_q = standardize(features_q, q_mean, q_std)
         query = bind_bundle_batched(kps_q, features_q, proj=proj)
 
@@ -158,8 +165,10 @@ def embedding(pickles : list[str]) -> None:
         gc.collect()
 
         outdir, basename = os.path.split(pickle_name)
-        outfile = os.path.join(outdir, f'embedded-{basename}')
-
+        outdir = os.path.join(outdir, 'embedded')
+        outfile = os.path.join(outdir, basename)
+        os.makedirs(outdir, exist_ok=True)
+        
         print(f"Writing to: {outfile}.")
         with open(outfile, 'wb') as file:
             pickle.dump({
