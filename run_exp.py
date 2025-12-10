@@ -42,13 +42,13 @@ def evaluate(pickle_dir : str, preprocess_kwargs : dict = {}):
         json.dump(fp=file, obj=results)
     with open(os.path.join(results_dir, f'{date}-results.meta.json'), 'w') as file:
         json.dump(fp=file, obj={'pickle_dir' : pickle_dir, 'preprocess_kwargs' : preprocess_kwargs})
-        
+
     for k, vs in results.items():
         print(k, "\t", "mean: ", np.mean(vs), " median: ", np.median(vs))
 
 if __name__=='__main__':
 
     experiment_kwargs = {
-        'normalization' : 'dataset'
+        'normalization' : 'per-image'
     }
     evaluate('pickles/OxfordRobotCar', preprocess_kwargs=experiment_kwargs)
