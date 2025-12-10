@@ -108,7 +108,10 @@ def stats(features, axis):
 def standardize(features, mean, std):
     return  (features - mean) / (std + 1e-12)
 
-def embedding(pickles : list[str], normalization : Literal['per-image', 'dataset'] = 'per-image', **kwargs) -> None:
+def embedding(pickles : list[str], 
+                normalization : Literal['per-image', 'dataset'] = 'per-image', 
+                use_orth_proj=False,
+                **kwargs) -> None:
 
     assert all([x.endswith('.pickle') for x in pickles])
     stats_axis = {
@@ -126,10 +129,24 @@ def embedding(pickles : list[str], normalization : Literal['per-image', 'dataset
         # Paper: "We use l2-normalization to standardize descriptor magnitudes"
         features_db = l2norm(features_db)
 
-        # define projection matrix
-        proj = np.random.normal(size=(d, features_db.shape[-1])) # [d, din]
-        proj = proj / np.linalg.norm(proj, axis=1, keepdims=True) # row-normalized
-        proj = proj.T # [din, d]
+        if use_orth_proj:
+            from scipy.stats import ortho_group
+
+            din = features_db.shape[-1]
+            # generate an orthogonal basis of size [din x din]
+            Q = ortho_group.rvs(din)
+            
+            # expand Q to a [din x d] projection matrix by repeating blocks
+            # this keeps each 1024-d block orthogonal
+            proj = np.concatenate([Q] * (d // din), axis=1)
+            
+            if proj.shape[1] < d: # add padding to meet d
+                proj = np.concatenate([proj, Q[:, :d - proj.shape[1]]], axis=1)
+        else:
+            # define projection matrix
+            proj = np.random.normal(size=(d, features_db.shape[-1])) # [d, din]
+            proj = proj / np.linalg.norm(proj, axis=1, keepdims=True) # row-normalized, like in VSA toolkit
+            proj = proj.T # [din, d]
 
         # followed by dimension-wise standardization to standard normal distributions.
         # The standardization is done using all descriptors from the current image.
