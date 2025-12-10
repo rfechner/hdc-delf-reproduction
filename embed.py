@@ -144,9 +144,9 @@ def embedding(pickles : list[str],
                 proj = np.concatenate([proj, Q[:, :d - proj.shape[1]]], axis=1)
         else:
             # define projection matrix
-            proj = np.random.normal(size=(d, features_db.shape[-1])) # [d, din]
-            proj = proj / np.linalg.norm(proj, axis=1, keepdims=True) # row-normalized, like in VSA toolkit
-            proj = proj.T # [din, d]
+            proj = np.random.normal(size=(features_db.shape[-1], d))
+
+        proj = proj / np.linalg.norm(proj, axis=1, keepdims=True) # row normalized [din, d]
 
         # followed by dimension-wise standardization to standard normal distributions.
         # The standardization is done using all descriptors from the current image.
