@@ -111,6 +111,7 @@ def standardize(features, mean, std):
 def embedding(pickles : list[str], 
                 normalization : Literal['per-image', 'dataset'] = 'per-image', 
                 use_orth_proj=False,
+                row_normalize=True,
                 **kwargs) -> None:
 
     assert all([x.endswith('.pickle') for x in pickles])
@@ -146,7 +147,8 @@ def embedding(pickles : list[str],
             # define projection matrix
             proj = np.random.normal(size=(features_db.shape[-1], d))
 
-        proj = proj / np.linalg.norm(proj, axis=1, keepdims=True) # row normalized [din, d]
+        normalization_axis = 1 if row_normalize else 0
+        proj = proj / np.linalg.norm(proj, axis=normalization_axis, keepdims=True)
 
         # followed by dimension-wise standardization to standard normal distributions.
         # The standardization is done using all descriptors from the current image.

@@ -47,8 +47,17 @@ def evaluate(pickle_dir : str, preprocess_kwargs : dict = {}):
         print(k, "\t", "mean: ", np.mean(vs), " median: ", np.median(vs))
 
 if __name__=='__main__':
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--normalization', choices=['per-image', 'dataset'], default='per-image')
+    parser.add_argument('--use_orth_proj', action='store_true', default=False)
+    parser.add_argument('--col_normalize', action='store_true', default=False)
+    args = parser.parse_args()
 
     experiment_kwargs = {
-        'normalization' : 'per-image'
+        'normalization' : args.normalization,
+        "use_orth_proj" : args.use_orth_proj,
+        "row_normalize" : not args.col_normalize
     }
     evaluate('pickles/OxfordRobotCar', preprocess_kwargs=experiment_kwargs)

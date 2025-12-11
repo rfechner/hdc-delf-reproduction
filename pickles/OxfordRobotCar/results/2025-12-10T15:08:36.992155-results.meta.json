@@ -1,0 +1,1 @@
+{"pickle_dir": "pickles/OxfordRobotCar", "preprocess_kwargs": {"normalization": "per-image", "use_orth_proj": false, "row_normalize": true}}
