@@ -30,7 +30,15 @@ axes (0, 1).
 
 Interestingly, this drops average precision over all database/query setups *except* 2014-12-09--2014-12-16, which this implementation struggled with especially.
 
+#### Row-Normalization, Orthogonal Projection Matrix
+In the [implementation](https://github.com/TUC-ProAut/VSA_Toolbox/blob/master/%2Bexperimental_scripts/visual_place_recognition.m) which I'm orienting myself on the projection matrix is column-normalized instead of row-normalized. I've added row-normalization as well as an orthogonal projection matrix as small experiments. I'm reporting the median over 10 runs. The baseline is the per-image normalized col-normalized run from the first table above. I've normalized per-image as in the baseline.
 
-
-
+|Database|Query|Reported in paper|Baseline|Row-Normalized|Orthogonal|Row-Normalized + Orthogonal|
+|------|------|------|------|---|------|------|
+|2014-12-09|2015-05-19|0.91|0.89|**0.94**|0.91|0.93|
+|2014-12-09|2015-08-28|0.71|0.74|0.78|0.74|**0.79**|
+|2014-12-09|2014-11-25|0.82|0.88|0.91|0.88|**0.91**|
+|2014-12-09|2014-12-16|**0.80**|0.50|0.53|0.50|0.58|
+|2015-05-19|2015-02-03|0.78|0.82|0.82|0.81|**0.88**|
+|2015-08-28|2014-11-25|0.71|0.74|**0.78**|0.73|0.78|
 
